@@ -12,22 +12,24 @@ from models.dbeta import DBETA
 from types import SimpleNamespace
 
 
-def get_model(config_path, checkpoint_path) :
+def get_model(config_path, checkpoint_path):
     with open(config_path, 'r') as json_file:
         cfg = json.load(json_file)
 
     cfg = SimpleNamespace(**cfg['model'])
     model = DBETA(cfg)
     try:
-        checkpoint = torch.load(checkpoint_path)
-        if "ecg_encoder.mask_emb" in checkpoint["model"].keys():
-            del checkpoint["model"]["ecg_encoder.mask_emb"]
-
-        model.load_state_dict(checkpoint["model"], strict=True)
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        if isinstance(checkpoint, dict) and "model" in checkpoint:
+            state_dict = checkpoint["model"]
+        else:
+            state_dict = checkpoint
+        state_dict.pop("ecg_encoder.mask_emb", None)
+        model.load_state_dict(state_dict, strict=True)
         print("Loaded pre-trained ECG encoder ...")
-    except:
-        print("Not using pre-trained checkpoints!!!")
-        
+    except Exception as e:
+        print(f"Not using pre-trained checkpoints: {e}")
+
     model.remove_pretraining_modules()
     return model
 
@@ -47,8 +49,8 @@ def get_ecg_feats(model, ecgs, args=None):
 
 
 if __name__ == "__main__":
-    model = get_model(config_path='configs/config.json', checkpoint_path='checkpoints/sample.pt')
-    ecgs = torch.randn(2, 12, 5000)  # [batch, leads, length], 5000 = 10s x 500Hz 
+    model = get_model(config_path='configs/config.json', checkpoint_path='checkpoints/pytorch_model.bin') # sample.pt also okay!
+    ecgs = torch.randn(2, 12, 5000)  # [batch, leads, length], 5000 = 10s x 500Hz
     ecg_features = get_ecg_feats(model, ecgs)
-    print(ecg_features.shape) # (2, 768)
+    print(ecg_features.shape)  # (2, 768)
     

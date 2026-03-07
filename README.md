@@ -54,7 +54,26 @@ This repository shows how to perform inference with the model and includes a qui
 
 ## :book: Usage
 
-First, we need to clone the project and prepare the environment as follows:
+### Load with `transformers`
+
+```python
+from transformers import AutoModel
+import torch
+
+model = AutoModel.from_pretrained("Manhph2211/D-BETA", trust_remote_code=True)
+model.eval()
+
+ecgs = torch.randn(2, 12, 5000) # [batch, leads, length]
+with torch.no_grad():
+    output = model(ecgs)
+
+ecg_features = output.pooler_output
+print(ecg_features.shape)  # (2, 768)
+```
+
+### Load with the GitHub repo
+
+Clone the project and prepare the environment:
 
 ```bash
 git clone https://github.com/manhph2211/D-BETA.git && cd D-BETA
@@ -63,23 +82,18 @@ conda activate dbeta
 pip install -r requirements.txt
 ```
 
-Next, please download the CODE-test data from [here](https://zenodo.org/records/3765780) and put it into the `data/downstream/code-test` directory. 
-
-Then, we need to download the pre-trained model from [here](https://huggingface.co/Manhph2211/D-BETA), and put it into `checkpoints` directory.
-
-Finally, to run the code, we can just use the `example.ipynb` notebook. You can also run the following command to execute the encoder only for feature extraction:
+Checkout our `example.ipynb` notebook for a quick example of using the model for zero-shot classification on the CODE-15 test dataset. You can also use the encoder directly:
 
 ```python
-
 import torch
 from models.processor import get_model, get_ecg_feats
 
-model = get_model(config_path='configs/config.json', checkpoint_path='checkpoints/sample.pt')
-ecgs = torch.randn(2, 12, 5000)  # [batch, leads, length], 5000 = 10s x 500Hz 
+model = get_model(config_path='configs/config.json', checkpoint_path='checkpoints/pytorch_model.bin') # or sample.pt
+ecgs = torch.randn(2, 12, 5000)  # [batch, leads, length]
 ecg_features = get_ecg_feats(model, ecgs)
-print(ecg_features.shape) # (2, 768)
-
+print(ecg_features.shape)  # (2, 768)
 ```
+
 
 ## :memo: Acknowledgments
 

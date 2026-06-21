@@ -51,6 +51,8 @@
         "mem_decoder_hidden_dim": 384,
         "mem_decoder_num_layers": 4,
         "mem_decoder_num_heads": 6,
-        "max_text_size": 256
+        "max_text_size": 256,
+        "gsa_placement": [true, true, true, true]
+
     }
 }

@@ -1,5 +1,4 @@
 # custom
-trainer/*.py
 main.py
 checkpoints/*.pt
 data/downstream/*/*.zip

@@ -19,6 +19,9 @@ from models.modules import (
     compute_mask_indices
 )
 
+from models.GSA import GSA_Conv_Feature_Extraction
+
+
 from .base import PretrainingModel
 logger = logging.getLogger(__name__)
 
@@ -208,29 +211,27 @@ class TransformerModel(PretrainingModel):
 class ECGTransformerModel(TransformerModel):
     def __init__(self, cfg):
         super().__init__(cfg)
-
         feature_enc_layers = eval(cfg.conv_feature_layers)
         self.embed = feature_enc_layers[-1][0]
-
-        self.feature_extractor = ConvFeatureExtraction(
+        self.feature_extractor = GSA_Conv_Feature_Extraction(
             conv_layers=feature_enc_layers,
             in_d=cfg.in_d,
             dropout=0.0,
             mode=cfg.extractor_mode,
-            conv_bias=cfg.conv_bias
+            conv_bias=cfg.conv_bias,
+            gsa_placement=cfg.gsa_placement
         )
-
         self.post_extract_proj = (
             nn.Linear(self.embed, cfg.encoder_embed_dim)
             if self.embed != cfg.encoder_embed_dim
             else None
         )
-
         self.feature_grad_mult = cfg.feature_grad_mult
         self.conv_pos = ConvPositionalEncoding(cfg)
         self.layer_norm = LayerNorm(self.embed)
-    
+
         self.num_updates = 0
+
 
     @classmethod
     def build_model(cls, cfg, task=None):
@@ -258,18 +259,18 @@ class ECGTransformerModel(TransformerModel):
         padding_mask=None,
         **kwargs
     ):
-        x, padding_mask = self.get_embeddings(source, padding_mask)
+        x, padding_mask, attention_logits = self.get_embeddings(source, padding_mask)
         x = self.get_output(x, padding_mask)
-        return {"x": x, "padding_mask": padding_mask}
+        return {"x": x, "padding_mask": padding_mask, "attention_logits": attention_logits}
 
     def get_embeddings(self, source, padding_mask):
         if self.feature_grad_mult > 0:
-            features = self.feature_extractor(source)
+            features, attention_weights, attention_logits = self.feature_extractor(source)
             if self.feature_grad_mult != 1.0:
                 features = GradMultiply.apply(features, self.feature_grad_mult)
         else:
             with torch.no_grad():
-                features = self.feature_extractor(source)
+                features, attention_weights, attention_logits = self.feature_extractor(source)
 
         features = features.transpose(1,2)
         features = self.layer_norm(features)
@@ -280,15 +281,10 @@ class ECGTransformerModel(TransformerModel):
                 for input_len in input_lengths:
                     assert (input_len == input_len[0]).all()
                 input_lengths = input_lengths[:,0]
-            # apply conv formula to get real output_lengths
             output_lengths = self._get_feat_extract_output_lengths(input_lengths)
-
             padding_mask = torch.zeros(
                 features.shape[:2], dtype = features.dtype, device = features.device
             )
-
-            # these two operations makes sure that all values
-            # before the output lengths indices are attended to
             padding_mask[
                 (
                     torch.arange(padding_mask.shape[0], device = padding_mask.device),
@@ -304,12 +300,12 @@ class ECGTransformerModel(TransformerModel):
             features = self.post_extract_proj(features)
         
         features = self.dropout_input(features)
-
         x = features
         x_conv = self.conv_pos(x, channel_first=False)
         x = x + x_conv
 
-        return x, padding_mask
+        return x, padding_mask, attention_logits
+
 
     def get_output(self, x, padding_mask=None):
         x = self.encoder(x, padding_mask=padding_mask)
